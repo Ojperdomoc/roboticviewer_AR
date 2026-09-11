@@ -1,0 +1,41 @@
+name: Desplegar en GitHub Pages
+
+# El juego es 100 % estático (sin build): se publica la raíz de la rama tal cual.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Prueba rápida: los tests del motor de juego y del pipeline de percepción.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Probar reglas, percepción y assets
+        run: |
+          node --test
+          node scripts/check.mjs
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4

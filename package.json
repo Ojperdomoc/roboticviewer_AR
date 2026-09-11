@@ -1,0 +1,16 @@
+{
+  "name": "robovisor-ar",
+  "version": "1.0.0",
+  "description": "ROBOVISOR AR — juego de visión robótica en VR/AR con la cámara del celular (three.js + MediaPipe). 100% estático: corre en GitHub Pages.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "serve": "node scripts/serve.mjs",
+    "test": "node --test",
+    "check": "node scripts/check.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#05080b" />
+<meta name="description" content="ROBOVISOR AR — juego de realidad extendida que convierte tus manos, dedos y cada parte de tu cuerpo en robótica usando la cámara frontal y trasera del celular. Corre 100 % en GitHub Pages." />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>ROBOVISOR AR · visor robótico corporal</title>
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="icon" href="./assets/icons/favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="./assets/icons/icon-192.png" />
+<link rel="stylesheet" href="./css/app.css" />
+</head>
+<body>
+<div id="app">
+  <!-- La cámara del celular alimenta las texturas; nunca se muestra con CSS para
+       que el único lugar donde aparece el video sea el sombreador del visor. -->
+  <video id="cam-video" playsinline muted autoplay disablepictureinpicture></video>
+
+  <canvas id="stage" aria-label="Visor robótico: cuerpo humano convertido en robótico"></canvas>
+
+  <!-- Raíz del dom-overlay: todo lo interactivo vive aquí para seguir visible en RA -->
+  <div id="hud" class="hud">
+    <header class="hud-top">
+      <div class="brand">
+        <span class="brand-mark">◈</span>
+        <span class="brand-name">ROBOVISOR<em>AR</em></span>
+        <span class="brand-mode" id="hud-mode">visor</span>
+      </div>
+      <div class="score-block">
+        <div class="score"><span id="hud-score">0</span><small>pts</small></div>
+        <div class="score-meta">ronda <b id="hud-round">1</b> · <span id="hud-time">1:35</span> · récord <b id="hud-best">0</b></div>
+      </div>
+      <div class="hud-top-right">
+        <div class="bars">
+          <label class="bar-row"><span>INTEGRIDAD</span><i class="bar"><b id="bar-integrity"></b></i></label>
+          <label class="bar-row combo"><span>COMBO <b id="hud-combo">x1</b></span><i class="bar"><b id="bar-combo"></b></i></label>
+        </div>
+        <div class="top-buttons">
+          <button id="btn-pause" class="icon-btn" title="Pausa (P)">❚❚</button>
+          <button id="btn-settings" class="icon-btn" title="Ajustes (S)">⚙</button>
+          <button id="btn-help" class="icon-btn" title="Cómo jugar (H)">?</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="hud-left" id="objectives-panel">
+      <h3 class="panel-title">PROTOCOLO DE CALIBRACIÓN</h3>
+      <ul id="objectives" class="objectives"></ul>
+    </div>
+
+    <aside class="hud-right" id="parts-panel">
+      <h3 class="panel-title">CUERPO ROBÓTICO</h3>
+      <ul id="parts" class="parts"></ul>
+      <div class="coverage">
+        <span>robotización</span>
+        <i class="bar"><b id="bar-coverage"></b></i>
+        <b id="hud-coverage">0%</b>
+      </div>
+    </aside>
+
+    <div id="reticle" class="reticle" hidden></div>
+    <div id="flash" class="flash" hidden></div>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+
+    <footer class="hud-bottom">
+      <div class="gesture-strip" id="gesture-strip"></div>
+      <div class="controls">
+        <button id="btn-cam" class="ctrl">
+          <span class="ctrl-ico">⇄</span>
+          <span class="ctrl-label">Cámara <b id="hud-facing">frontal</b></span>
+        </button>
+        <button id="btn-torch" class="ctrl" hidden>
+          <span class="ctrl-ico">☀</span>
+          <span class="ctrl-label">Luz</span>
+        </button>
+        <button id="btn-scan" class="ctrl">
+          <span class="ctrl-ico">⌖</span>
+          <span class="ctrl-label">Escanear <b id="hud-scan">0%</b></span>
+        </button>
+        <button id="btn-mode" class="ctrl primary">
+          <span class="ctrl-ico">◉</span>
+          <span class="ctrl-label" id="btn-mode-label">Entrar en VR</span>
+        </button>
+        <button id="btn-demo" class="ctrl">
+          <span class="ctrl-ico">▣</span>
+          <span class="ctrl-label">Demo sin cámara</span>
+        </button>
+      </div>
+      <div class="status-line">
+        <span id="hud-status" class="status">inicializando…</span>
+        <span class="stat" id="hud-fps">–</span>
+        <span class="stat" id="hud-detectors">–</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Pantalla de arranque -->
+  <section id="boot" class="screen boot">
+    <div class="boot-inner">
+      <p class="eyebrow">juego de visión por computadora · WebXR · three.js + MediaPipe</p>
+      <h1 class="title">ROBO<span>VISOR</span><sup>AR</sup></h1>
+      <p class="tagline">Tus manos, tus dedos y cada parte de tu cuerpo se convierten en
+        <b>hardware robótico</b> en tiempo real. Solo se altera lo que es humano: el fondo
+        queda intacto.</p>
+      <ol class="brief">
+        <li><b>Apunta</b> la cámara a tu cuerpo (frontal o trasera) y tu esqueleto se viste de servo.</li>
+        <li><b>Atrapa</b> los núcleos de servo con una <em>pinza</em> y conéctalos en el zócalo que pide el protocolo.</li>
+        <li><b>Usa las dos cámaras</b>: con la trasera escaneas a otras personas y desbloqueas planos.</li>
+        <li><b>Entra en VR</b> (WebXR o modo gafas) y mira hacia abajo: el cuerpo robótico es tuyo.</li>
+      </ol>
+      <div class="boot-actions">
+        <button id="start-camera" class="btn big">▶ Iniciar con la cámara</button>
+        <button id="start-demo" class="btn">Demo sin cámara</button>
+        <button id="start-vr" class="btn">Modo VR / gafas</button>
+      </div>
+      <div class="boot-progress" id="boot-progress" hidden>
+        <i class="bar"><b id="boot-bar"></b></i>
+        <span id="boot-detail">preparando…</span>
+      </div>
+      <div class="boot-notes">
+        <p>Necesitás <b>permiso de cámara</b> y HTTPS (GitHub Pages lo da). Todo el procesamiento
+        ocurre en tu dispositivo: <b>ninguna imagen sale del celular</b>.</p>
+        <p id="compat-line" class="compat"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Ayuda -->
+  <section id="help" class="screen sheet" hidden>
+    <div class="sheet-inner">
+      <h2>Cómo se juega</h2>
+      <div class="cols">
+        <div>
+          <h4>Gestos (mando)</h4>
+          <ul class="keys" id="help-gestures"></ul>
+          <h4>Zócalos</h4>
+          <p>Cada núcleo pertenece a una parte del cuerpo. Llegalo a SU zócalo: si la zona no es
+          cuerpo humano detectado, el visor rechaza alterar y perdés integridad.</p>
+        </div>
+        <div>
+          <h4>Cámaras</h4>
+          <ul class="keys">
+            <li><b>Frontal</b>: auto-visión. Ves tu cara, torso y manos robotizadas.</li>
+            <li><b>Trasera</b>: apuntá a otra persona y mantenela en cuadro para escanearla.</li>
+            <li><b>Luz</b>: linterna para escanear en zonas oscuras.</li>
+          </ul>
+          <h4>VR</h4>
+          <p>Si tu navegador soporta WebXR, entrás a <b>RA/VR inmersiva</b>. Si no, el <b>modo gafas</b>
+          divide la pantalla en dos ojos y usa el giroscopio (Google Cardboard y similares).</p>
+          <h4>Sin cámara</h4>
+          <p>En <b>Demo</b> un cuerpo sintético maneja el visor. En escritorio también podés jugar con
+          el mouse: <em>mantener presionado = pinza</em>, <em>soltar = abrir la palma</em>.</p>
+        </div>
+      </div>
+      <button class="btn close" data-close>Entendido</button>
+    </div>
+  </section>
+
+  <!-- Ajustes -->
+  <section id="settings" class="screen sheet" hidden>
+    <div class="sheet-inner">
+      <h2>Ajustes del visor</h2>
+      <div class="fields">
+        <label class="field">
+          <span>Calidad / rendimiento</span>
+          <select id="set-quality">
+            <option value="bajo">bajo (30 fps, menos detectores)</option>
+            <option value="medio" selected>medio (recomendado)</option>
+            <option value="alto">alto (requiere buen celular)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Intensidad de la alteración</span>
+          <input type="range" id="set-alter" min="0" max="100" value="100" />
+          <small>Sobre la máscara de partes humanas: 0 % = video puro, 100 % = bodykit completo.</small>
+        </label>
+        <label class="field check">
+          <input type="checkbox" id="set-haptics" checked />
+          <span>Vibración al conectar núcleos</span>
+        </label>
+        <label class="field check">
+          <input type="checkbox" id="set-audio" checked />
+          <span>Audio del servo</span>
+        </label>
+        <label class="field check">
+          <input type="checkbox" id="set-autopause" checked />
+          <span>Pausar al cambiar de app</span>
+        </label>
+        <div class="field">
+          <span>Modelos de visión</span>
+          <p class="hint" id="set-models">–</p>
+          <button class="btn tiny" id="set-clear-cache">Borrar caché de modelos</button>
+        </div>
+        <details class="field">
+          <summary>Fuente de modelos (si tu red bloquea Google)</summary>
+          <input type="url" id="set-model-base" placeholder="https://tu-espejo/mediapipe-models" />
+          <small>Se usa como prefijo alternativo antes de las URLs oficiales. Guardado en este dispositivo.</small>
+        </details>
+      </div>
+      <button class="btn close" data-close>Cerrar</button>
+    </div>
+  </section>
+
+  <!-- Resultado -->
+  <section id="result" class="screen" hidden>
+    <div class="result-inner">
+      <h2 id="result-title">Sesión terminada</h2>
+      <p class="result-sub" id="result-sub"></p>
+      <div class="result-score"><span id="result-score">0</span><small>pts</small></div>
+      <ul class="result-stats" id="result-stats"></ul>
+      <div class="result-actions">
+        <button class="btn big" id="again">↻ Otra sesión</button>
+        <button class="btn" id="to-boot">Menú principal</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="fatal" class="screen fatal" hidden>
+    <div class="sheet-inner">
+      <h2>Fallo del visor</h2>
+      <p id="fatal-msg"></p>
+      <pre id="fatal-detail"></pre>
+      <button class="btn" data-reload>Reintentar</button>
+    </div>
+  </div>
+</div>
+
+<noscript>
+  <p style="padding:24px;font:16px/1.5 system-ui;color:#e8f6ff">
+    ROBOVISOR AR necesita JavaScript habilitado. También requiere un navegador con
+    <code>getUserMedia</code> (cámara) y WebGL 2.
+  </p>
+</noscript>
+
+<script type="module" src="./js/main.js"></script>
+<script nomodule>
+  document.getElementById('boot-detail').textContent = 'Este navegador no soporta módulos ES: usá Chrome/Edge 89+, Safari 15+ o Firefox 91+.';
+</script>
+</body>
+</html>
