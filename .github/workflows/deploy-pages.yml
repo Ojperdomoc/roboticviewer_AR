@@ -4,6 +4,7 @@ name: Desplegar en GitHub Pages
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -16,7 +17,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # En los PR sólo se prueba (sin permisos de despliegue): mismos pasos, sin publicar.
+  verify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Tests del juego + enlaces estáticos
+        run: |
+          node --test
+          node scripts/check.mjs
+
   deploy:
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -24,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Prueba rápida: los tests del motor de juego y del pipeline de percepción.
+      # Puerta antes de publicar: si un test o un enlace roto, no se despliega.
       - uses: actions/setup-node@v4
         with:
           node-version: 20
