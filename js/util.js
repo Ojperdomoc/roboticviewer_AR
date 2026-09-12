@@ -118,3 +118,18 @@ export const norm = (p) => ({ x: p.x ?? 0, y: p.y ?? 0, z: p.z ?? 0, visibility:
 
 /** Espejo horizontal de un set de landmarks (cámara frontal = imagen reflejada). */
 export const mirrorX = (p) => ({ ...p, x: 1 - p.x });
+
+/** Traduce errores de cámara/WebXR a algo accionable para el jugador. */
+export function friendlyError(err, fallback = '') {
+  const n = err?.name || '';
+  const m = String(err?.message || err || '');
+  if (/NotAllowedError|Permission/i.test(n + m)) return 'Permiso de cámara denegado: habilitalo en el candado de la barra de direcciones y reintentá.';
+  if (/NotFoundDevicesError|NotFoundError/i.test(n + m)) return 'No se encontró ninguna cámara en este dispositivo.';
+  if (/NotReadableError|TrackStartError/i.test(n + m)) return 'La cámara está siendo usada por otra app (o está bloqueada). Cerrala y reintentá.';
+  if (/OverconstrainedError/i.test(n + m)) return 'La cámara no soporta esa combinación de resolución/orientación.';
+  if (/secure context|getUserMedia/i.test(m)) return 'Necesitás HTTPS para usar la cámara (GitHub Pages lo provee; en local usá http://localhost).';
+  if (/NotSupportedError/i.test(n + m)) return 'Este navegador no soporta sesiones inmersivas (WebXR). Probá en visor 2D o en modo gafas.';
+  if (/InvalidStateError/i.test(n + m)) return 'El navegador no pudo iniciar la sesión inmersiva en este momento; reintentá desde la pantalla de ajustes.';
+  if (/vite|import|module|404/i.test(m)) return `No se pudo cargar un módulo: ${m}`;
+  return [m || n, fallback].filter(Boolean).join(' — ') || 'Error desconocido del visor.';
+}

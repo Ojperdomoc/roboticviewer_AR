@@ -165,3 +165,24 @@ test('la máscara y el video comparten sistema de coordenadas (alineación con l
   assert.match(rules, /setPlayCenter\s*\(/, 'Rules necesita setPlayCenter() para seguir al cuerpo');
   assert.match(rules, /clamp\(\s*seedPos\.x/, 'los núcleos sembrados deben quedar dentro del cuadro');
 });
+
+test('RA/VR: espacio de referencia negociado y cámara liberada antes de entrar', async () => {
+  const xr = readFileSync(join(ROOT, 'js/xr/xr.js'), 'utf8');
+  const game = readFileSync(join(ROOT, 'js/game/game.js'), 'utf8');
+
+  // three.js aborta setSession si requestReferenceSpace falla => hay que arrancar con 'local'
+  // (obligatorio en toda sesión inmersiva) y subir a 'local-floor' sólo si el runtime lo da.
+  assert.match(xr, /setReferenceSpaceType\('local'\)/, 'xr.js debe fijar el espacio base en "local"');
+  assert.match(xr, /for \(const t of \[[^\]]*local-floor[^\]]*\]\)/, 'falta el upgrade a local-floor/bounded-floor');
+  assert.doesNotMatch(xr, /setReferenceSpaceType\([^)]*local-floor/, 'no se debe exigir local-floor antes de setSession');
+  assert.match(xr, /get hasFloor\(\)/, 'game.js necesita saber si el suelo es conocido');
+
+  // En Android no se puede sostener getUserMedia + immersive-ar: hay que ceder la cámara y
+  // recuperarla al salir (si no, la sesión abre con la pantalla negra o no abre).
+  const closeAt = game.indexOf('this._camReleased = true;');
+  const enterAt = game.indexOf('await this.xr.enter(');
+  assert.ok(closeAt > 0 && enterAt > closeAt, 'la cámara debe liberarse ANTES de xr.enter()');
+  assert.match(game, /async #restoreCamera\(\)/, 'falta la recuperación de cámara al salir de la sesión');
+  assert.match(game, /if \(this\._camReleased\) \{ this\._camReleased = false; await this\.#restoreCamera\(\); \}/,
+    'si xr.enter() falla hay que devolverle la cámara al visor');
+});

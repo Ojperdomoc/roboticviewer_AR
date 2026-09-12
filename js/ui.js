@@ -375,17 +375,7 @@ export function describeObjective(o) {
   }
 }
 
-export function friendlyError(err) {
-  const n = err?.name || '';
-  const m = String(err?.message || err || '');
-  if (/NotAllowedError|Permission/i.test(n + m)) return 'Permiso de cámara denegado: habilitalo en el candado de la barra de direcciones y reintentá.';
-  if (/NotFoundDevicesError|NotFoundError/i.test(n + m)) return 'No se encontró ninguna cámara en este dispositivo.';
-  if (/NotReadableError|TrackStartError/i.test(n + m)) return 'La cámara está siendo usada por otra app (o está bloqueada). Cerrala y reintentá.';
-  if (/OverconstrainedError/i.test(n + m)) return 'La cámara no soporta esa combinación de resolución/orientación.';
-  if (/secure context|getUserMedia/i.test(m)) return 'Necesitás HTTPS para usar la cámara (GitHub Pages lo provee; en local usá http://localhost).';
-  if (/vite|import|module|404/i.test(m)) return `No se pudo cargar un módulo: ${m}`;
-  return m || n || 'Error desconocido del visor.';
-}
+export { friendlyError } from './util.js';
 
 export const I18N = T;
 export default UI;

@@ -33,7 +33,7 @@ import { studioEnv, holoRoom } from '../robot/envmap.js';
 import { VisorProjector, coverFactors } from '../robot/project.js';
 import { XRManager, OrientationPose, Glasses } from '../xr/xr.js';
 import { SimBody } from '../sim.js';
-import { clamp, damp, lerp, store } from '../util.js';
+import { clamp, damp, lerp, store, friendlyError } from '../util.js';
 
 export const MODES = { VISOR: 'visor', AR: 'ar', VR: 'vr', GLASSES: 'gafas' };
 
@@ -229,6 +229,16 @@ export class RoboGame {
     this._bodyAnchored = false;
 
     const metric = mode !== MODES.VISOR;
+    // RA/VR: el sistema es dueño de la cámara. En Android no se puede sostener
+    // getUserMedia e `immersive-ar` a la vez (el track se muta o el requestSession falla con
+    // NotReadableError), así que liberamos el stream al entrar y lo recuperamos al salir.
+    if (!metric && this._camReleased) {
+      this._camReleased = false;
+      await this.#restoreCamera();
+    } else if (metric && mode !== MODES.GLASSES && !this.sim && this.cam?.ready) {
+      this.cam.close();
+      this._camReleased = true;
+    }
     this.room.group.visible = metric;
     this.screen.visible = mode === MODES.GLASSES;
     this.scene.fog = metric ? new THREE.FogExp2(0x081016, 0.06) : null;
@@ -236,7 +246,23 @@ export class RoboGame {
     this.camera.updateProjectionMatrix();
 
     if (mode === MODES.AR || mode === MODES.VR) {
-      await this.xr.enter(mode === MODES.AR ? 'ar' : 'vr');
+      try {
+        await this.xr.enter(mode === MODES.AR ? 'ar' : 'vr');
+      } catch (err) {
+        // Si no se puede entrar, no dejamos el juego sin cámara por nuestro cierre.
+        if (this._camReleased) { this._camReleased = false; await this.#restoreCamera(); }
+        this.mode = MODES.VISOR;
+        this.room.group.visible = false;
+        this.screen.visible = false;
+        this.scene.fog = null;
+        this.camera.fov = CONFIG.visor.fov;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setAnimationLoop((time) => this.#loop(time, null));
+        this.ui?.onMode?.(MODES.VISOR);
+        this.ui?.toast?.(friendlyError(err, 'No se pudo abrir la sesión inmersiva: seguimos en visor 2D'), 'bad');
+        return this.mode;
+      }
+      this.ui?.toast?.('Apuntá con la mira al núcleo y tocá para agarrar; tocá sobre tu parte humana para conectar', 'info');
       this.renderer.setAnimationLoop((time, frame) => this.#loop(time, frame));
     } else if (mode === MODES.GLASSES) {
       const ok = await OrientationPose.request();
@@ -616,9 +642,13 @@ export class RoboGame {
     if (this.mode === MODES.AR) {
       if (!this._bodyAnchored) {
         this._anchor = this._anchor || new this.THREE.Vector3();
+        // Con 'local-floor' el piso está en y=0 y no dejamos que el cuerpo se hunda;
+        // con 'local' no conocemos el suelo, así que el torso se apoya contra la cabeza
+        // (mirar hacia abajo, como en la selfie) en vez de clavarlo en y=0.
+        const withFloor = this.xr?.hasFloor;
         this._anchor.set(
           this._headTmp.x + fwd.x * METRIC.forward,
-          Math.max(0, this._headTmp.y - 0.42),
+          withFloor ? Math.max(0, this._headTmp.y - 0.42) : this._headTmp.y - 0.42,
           this._headTmp.z + fwd.z * METRIC.forward
         );
         this._bodyAnchored = true;
@@ -638,6 +668,9 @@ export class RoboGame {
         this._headTmp.z + fwd.z * METRIC.forward
       );
     }
+    // Respiración mínima. En RA/VR la percepción puede pausar (la cámara la posee el
+    // sistema) y un rig perfectamente inmóvil parece un crash, no una pausa.
+    if (this.mode !== MODES.VISOR) this.bodyRoot.position.y += Math.sin(this.t * 1.15) * 0.0045;
     this.bodyRoot.rotation.set(0, yaw, 0);
   }
 
@@ -810,11 +843,29 @@ export class RoboGame {
 
   async switchCamera() {
     if (!this.cam) return null;
-    const f = this.cam.facing === 'front' ? 'rear' : 'front';
-    await this.cam.open(f);
+    if (this.xr?.presenting) { this.ui?.toast?.('Cambiá de cámara al salir de la sesión inmersiva', 'info'); return this.cam.actualFacing; }
+    const prev = this.cam.facing;
+    const f = prev === 'front' ? 'rear' : 'front';
+    try {
+      await this.cam.open(f);   // open() cierra el stream actual antes de pedir el nuevo
+    } catch (err) {
+      // Un cambio fallado no puede dejar al jugador sin cámara: reabrimos la anterior.
+      try { await this.cam.open(prev); } catch { /* sin cámara: el juego sigue con el puntero */ }
+      this.#resize();
+      this.ui?.toast?.(friendlyError(err, 'No se pudo cambiar de cámara — sigue la anterior'), 'warn');
+      return this.cam.actualFacing || prev;
+    }
     this.#resize();
     this.rules.cameraSwitched(this.cam.actualFacing);
     return this.cam.actualFacing;
+  }
+
+  /** Vuelve a pedir la cámara tras una sesión inmersiva (el permiso ya está concedido). */
+  async #restoreCamera() {
+    if (!this.cam) return;
+    try { await this.cam.open(this.cam.facing); }
+    catch (err) { this.ui?.onCameraError?.(err); }
+    this.#resize();
   }
 
   setTorch(on) { return this.cam?.setTorch?.(on) ?? false; }

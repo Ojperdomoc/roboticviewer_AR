@@ -123,7 +123,7 @@ js/robot/envmap.js         environment map de estudio + sala holográfica (sin a
 js/xr/xr.js                WebXR (AR/VR), pose de giroscopio y render estéreo
 js/sim.js                  cuerpo humano sintético (demo + tests)
 js/audio.js                SFX de servo sintetizados con WebAudio
-tests/*.test.mjs           41 pruebas: reglas, percepción, integración, enlaces
+tests/*.test.mjs           42 pruebas: reglas, percepción, integración, enlaces
 vendor/                    three.js y MediaPipe (wasm incluido) para no depender de CDN
 ```
 
@@ -131,7 +131,7 @@ vendor/                    three.js y MediaPipe (wasm incluido) para no depender
 
 ```bash
 node scripts/serve.mjs 8080   # servidor estático (http://localhost es contexto seguro)
-node --test                   # 41 pruebas: motor de juego, percepción, integración, enlaces
+node --test                   # 42 pruebas: motor de juego, percepción, integración, enlaces
 node scripts/check.mjs        # verifica que TODO asset relativo responda 200 y con buen content-type
 ```
 
@@ -140,10 +140,14 @@ los scripts.
 
 ## 8. Limitaciones conocidas
 
-* **WebXR + cámara simultánea**: en sesiones inmersivas la cámara la posee el sistema; si el
-  dispositivo no permite seguir detectando manos, el cuerpo se anima con la última pose y se
-  juega con toque/gatillo (mira al núcleo y tocá para agarrar, mirá la parte humana y tocá para
-  conectar).
+* **WebXR + cámara simultánea**: en sesiones inmersivas la cámara la posee el sistema (en
+  Android no se puede sostener `getUserMedia` e `immersive-ar` a la vez). El juego **libera el
+  stream al entrar a RA/VR y lo recupera al salir**: durante la sesión el cuerpo se sigue con la
+  última calibración y se juega apuntando con la mira + toque (mirá el núcleo → tocá para
+  agarrar; mirá tu parte humana → tocá para conectar).
+* **Espacio de referencia**: se entra con `local` (el único que todo runtime inmersivo debe dar)
+  y se sube a `local-floor` si existe. Sin suelo conocido el cuerpo se ancla a la altura de la
+  cabeza en vez de clavarse en `y = 0`; con suelo, apoya los pies en el piso.
 * **iOS/Safari**: no tiene WebXR → se usa visor 2D o modo gafas (giroscopio con permiso).
 * **Lentes de Realidad Aumentada tipo Cardboard**: sin distorsión barrel (se omitió a propósito
   para mantener el bundle chico y sin build); con lentes de 45 mm la imagen se ve ligeramente

@@ -20,6 +20,7 @@ export class XRManager {
     this.overlayRoot = opts.overlayRoot || null;
     this.session = null;
     this.kind = null;         // 'ar' | 'vr'
+    this.refSpace = 'local';  // espacio de referencia realmente concedido
     this.caps = { xr: false, ar: false, vr: false, checked: false };
     this._onSelect = new Set();
     this._onEnd = new Set();
@@ -27,6 +28,9 @@ export class XRManager {
   }
 
   get presenting() { return !!this.session; }
+
+  /** true si el runtime concedió un espacio con suelo (podemos apoyar los pies en el piso). */
+  get hasFloor() { return this.refSpace === 'local-floor' || this.refSpace === 'bounded-floor'; }
 
   async probe() {
     const nav = typeof navigator !== 'undefined' ? navigator : null;
@@ -55,8 +59,21 @@ export class XRManager {
     const session = await navigator.xr.requestSession(mode, init);
     this.kind = kind === 'vr' ? 'vr' : 'ar';
     this.renderer.xr.enabled = true;
-    this.renderer.xr.setReferenceSpaceType(kind === 'vr' ? 'local-floor' : 'local-floor');
+    // 'local' es el único espacio de referencia que TODA sesión inmersiva debe soportar;
+    // 'local-floor' es opcional y en varios teléfonos ese pedido falla. three.js aborta
+    // setSession si el requestReferenceSpace falla => la RA no abriría nunca. Por eso
+    // arrancamos con 'local' y subimos de espacio después, si el runtime lo ofrece.
+    this.renderer.xr.setReferenceSpaceType('local');
     await this.renderer.xr.setSession(session);
+    this.refSpace = 'local';
+    for (const t of ['local-floor', 'bounded-floor']) {
+      try {
+        const sp = await session.requestReferenceSpace(t);
+        this.renderer.xr.setReferenceSpace(sp);
+        this.refSpace = t;
+        break;
+      } catch { /* sin suelo: seguimos con 'local' (el cuerpo se ancla a la altura de la cabeza) */ }
+    }
     this.session = session;
 
     // "Select" (pantallazo en el teléfono, gatillo en gafas) = pinchar/agarrar.
@@ -94,22 +111,6 @@ export class XRManager {
   async exit() {
     if (this.session) { try { await this.session.end(); } catch { /* ya cerrada */ } }
     this.#onEnd();
-  }
-
-  /**
-   * Dónde debe montarse el cuerpo robótico al entrar en RA/VR: delante del usuario, a la
-   * altura del pecho. Devuelve {x,y,z,yaw,distance,chestHeight} para que game.js ancle la jerarquía.
-   */
-  anchorFromBody(camera, { distance = 0.42, chestHeight = 1.15 } = {}) {
-    const THREE = this.THREE;
-    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-    fwd.y = 0;
-    if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
-    fwd.normalize();
-    const pos = new THREE.Vector3(camera.position.x, 0, camera.position.z).addScaledVector(fwd, distance);
-    const yaw = Math.atan2(fwd.x, fwd.z);
-    if (this.kind === 'ar') pos.y = Math.min(0, chestHeight - camera.position.y);
-    return { x: pos.x, y: pos.y, z: pos.z, yaw, distance, chestHeight };
   }
 
   /** Raycaster por controlador/gaze para seleccionar núcleos sin cámara. */
