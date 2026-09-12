@@ -1,0 +1,57 @@
+name: Desplegar en GitHub Pages
+
+# El juego es 100 % estático (sin build): se publica la raíz de la rama tal cual.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  # En los PR sólo se prueba (sin permisos de despliegue): mismos pasos, sin publicar.
+  verify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Tests del juego + enlaces estáticos
+        run: |
+          node --test
+          node scripts/check.mjs
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Puerta antes de publicar: si un test o un enlace roto, no se despliega.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Probar reglas, percepción y assets
+        run: |
+          node --test
+          node scripts/check.mjs
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
